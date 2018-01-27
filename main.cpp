@@ -16,27 +16,28 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <linux/netfilter_ipv4.h>
+#include <termios.h>
 
 void print_usage() {
     const char* usage = R"END_USAGE(Transproxify - Copyright Ashley Newson 2018
 
 Usage:
-    transproxify PROXY_HOST PROXY_PORT LISTEN_PORT
+    transproxify [OPTIONS...] PROXY_HOST PROXY_PORT LISTEN_PORT
 
 Synopsis:
-    Perform transparent proxying through an HTTP proxy.
+    Perform transparent proxying through an HTTP or SOCKS proxy.
 
     Not all software supports configuring proxies. With transproxify, you can
-    force communications to pass through an HTTP proxy from inside the router.
+    force communications to pass through a proxy from inside the router.
 
     Transproxify listens on a given port accepting redirected traffic. When a
     redirected client connects to transproxify, transproxify will connect to a
-    given HTTP proxy server and use the CONNECT method to establish a tunnel
-    for forwarding data between the client and its intended server.
+    given proxy server and establish a tunnel for forwarding data between the
+    client and its intended server, all transparent to the client.
 
     Transproxify will not intercept traffic by itself. You may need to alter
     firewall settings. For example, to use transproxify to proxy HTTP and HTTPS
-    traffic on ports 80 and 443 via proxyserver:8080, you might use:
+    traffic on ports 80 and 443 via proxyserver:8080 HTTP proxy, you might use:
 
       # echo 1 > /proc/sys/net/ipv4/ip_forward
       # iptables -t nat -A PREROUTING -p tcp \
@@ -54,10 +55,84 @@ Synopsis:
     research from non-router hosts:
 
       # arpspoof -i NETWORK_INTERFACE -t CLIENT_ADDRESS ROUTER_ADDRESS
+
+Options:
+    -t PROTOCOL
+        Specify the upstream proxy's protocol. Default is http.
+        Valid choices are: http, socks4
+    -u USERNAME
+        Specify the username for proxy authentication.
+    -p
+        Prompt for a password for proxy authentication at startup.
+    -P PASSWORD
+        Specify the password for proxy authentication. Note that users on the
+        same system can see passwords entered like this in process tables.
+
+HTTP proxy authentication:
+    If a username and password are supplied, transproxy will send a
+    Proxy-Authorization header using the basic authorization scheme.
+
+SOCKS4 proxy authentication:
+    If a username or password is supplied, transproxy will use this as the
+    UserId in requests to the socks server. Else, a blank UserID is sent.
 )END_USAGE";
 
     std::cerr << usage;
 }
+
+
+/// read(), but keep reading until count bytes extracted.
+///
+/// Will only return less than count bytes if EOF is reached.
+///
+/// Returns -1 on any errors (well, whatever read() does).
+ssize_t read_exactly(int fd, void* buf, size_t count) {
+    int i = 0;
+    while (i < count) {
+        int r = read(fd, ((char*)buf)+i, count-i);
+        if (r < 0) {
+            return r;
+        } else if (r == 0) {
+            return i;
+        } else {
+            i += r;
+        }
+    }
+    return i;
+}
+
+/// Encode string to base64
+std::string base64encode(const std::string& plain) {
+    const unsigned char* values = (const unsigned char*)"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::stringstream stream;
+    const unsigned char* bytes = (const unsigned char*)plain.c_str();
+    size_t len = plain.length();
+    size_t i;
+    for (i = 0; i+2 < len; i+=3) {
+        stream.put(values[((bytes[i+0] & 0b11111100) >> 2)]);
+        stream.put(values[((bytes[i+0] & 0b00000011) << 4) + ((bytes[i+1] & 0b11110000) >> 4)]);
+        stream.put(values[((bytes[i+1] & 0b00001111) << 2) + ((bytes[i+2] & 0b11000000) >> 6)]);
+        stream.put(values[((bytes[i+2] & 0b00111111)     )]);
+    }
+    switch(len - i) {
+    case 0:
+        break;
+    case 1:
+        stream.put(values[((bytes[i+0] & 0b11111100) >> 2)]);
+        stream.put(values[((bytes[i+0] & 0b00000011) << 4)]);
+        stream.put('=');
+        stream.put('=');
+        break;
+    case 2:
+        stream.put(values[((bytes[i+0] & 0b11111100) >> 2)]);
+        stream.put(values[((bytes[i+0] & 0b00000011) << 4) + ((bytes[i+1] & 0b11110000) >> 4)]);
+        stream.put(values[((bytes[i+1] & 0b00001111) << 2)]);
+        stream.put('=');
+        break;
+    }
+    return stream.str();
+}
+
 
 class Cleaner {
 private:
@@ -85,12 +160,26 @@ public:
 class Proxy;
 
 struct ProxySettings {
+public:
+    enum class Protocol {
+        HTTP,
+        SOCKS4,
+    };
+
 private:
     friend class Proxy;
+    Protocol protocol;
+    std::string username;
+    std::string password;
     struct sockaddr_in proxyAddress;
+
 public:
-    ProxySettings(const char* proxyHost, int proxyPort) {
-        struct hostent *server = gethostbyname(proxyHost); // replace with getaddrinfo() later
+    ProxySettings(Protocol protocol, const std::string& proxyHost, int proxyPort, const std::string& username, const std::string& password):
+        protocol(protocol),
+        username(username),
+        password(password)
+    {
+        struct hostent *server = gethostbyname(proxyHost.c_str()); // replace with getaddrinfo() later
         if (server == nullptr) {
             throw std::runtime_error("could not resolve proxy hostname");
         }
@@ -98,6 +187,24 @@ public:
         proxyAddress.sin_family = AF_INET;
         bcopy((char*)server->h_addr, &proxyAddress.sin_addr.s_addr, server->h_length);
         proxyAddress.sin_port = htons(proxyPort);
+
+        switch (protocol) {
+        case Protocol::HTTP:
+            if (username.empty() != password.empty()) {
+                throw std::runtime_error("got only one of username or password for HTTP");
+            }
+            if (!username.empty() && username.find(':') != std::string::npos) {
+                throw std::runtime_error("HTTP username cannot contain ':' character");
+            }
+            break;
+        case Protocol::SOCKS4:
+            if (!username.empty() && !password.empty()) {
+                throw std::runtime_error("need only one of username or password for SOCKS4");
+            }
+            break;
+        default:
+            throw std::runtime_error("bad protocol setting");
+        }
     }
 };
 
@@ -106,21 +213,25 @@ private:
     ProxySettings settings;
     int clientSocketFd;
     std::string clientHost;
+    struct sockaddr_in targetAddress;
     std::string targetHost;
     int targetPort;
 
 public:
     // clientSocketFd becomes owned by Proxy
-    Proxy(ProxySettings settings, int clientSocketFd, const std::string& clientHost, const std::string& targetHost, int targetPort):
+    Proxy(ProxySettings settings, int clientSocketFd, const std::string& clientHost, const struct sockaddr_in& targetAddress):
         settings(settings),
         clientSocketFd(clientSocketFd),
         clientHost(clientHost),
-        targetHost(targetHost),
-        targetPort(targetPort)
+        targetAddress(targetAddress)
     {
+        char targetHostCstr[256] = {};
+        inet_ntop(AF_INET, &targetAddress.sin_addr, targetHostCstr, sizeof(targetHostCstr));
+        targetHost = targetHostCstr;
+        targetPort = ntohs(targetAddress.sin_port);
     }
 
-    int get_proxy_status(int proxySocketFd) {
+    int get_http_proxy_status(int proxySocketFd) {
         char line[256] = {};
         int i;
         for (i = 0; i < sizeof(line); i++) {
@@ -169,6 +280,82 @@ public:
         }
     }
 
+    void http_connect(int proxySocketFd) {
+        std::string tunnelRequest =
+            "CONNECT " + targetHost + ":" + std::to_string(targetPort) + " HTTP/1.1\n"
+            + "Host: " + targetHost + ":" + std::to_string(targetPort) + "\n"
+            + (!settings.username.empty() ? "Proxy-Authorization: Basic " + base64encode(settings.username + ":" + settings.password) + "\n" : "")
+            + "\n";
+
+        if (write(proxySocketFd, tunnelRequest.c_str(), tunnelRequest.length()) < 0) {
+            throw std::runtime_error("write to upstream proxy failed during CONNECT");
+        }
+
+        switch (get_http_proxy_status(proxySocketFd)) {
+        case 200:
+            // All good.
+            break;
+        case 407:
+            throw std::runtime_error("upstream proxy authorization required");
+        default:
+            throw std::runtime_error("upstream proxy failed to establish connection to endpoint or rejected connection");
+        }
+    };
+
+    void socks4_connect(int proxySocketFd) {
+#pragma pack(push, 1)
+        struct Socks4Packet {
+            uint8_t version;
+            uint8_t command; // or response
+            uint16_t dest_port;
+            uint32_t dest_address;
+        };
+#pragma pack(pop)
+
+        Socks4Packet request = {4, 1, targetAddress.sin_port, targetAddress.sin_addr.s_addr};
+
+        // Might generate two TCP packets. Dunno if that breaks anything.
+        const char* userId;
+        size_t userIdLen;
+        if (!settings.username.empty()) {
+            userId = settings.username.c_str();
+        } else if (!settings.password.empty()) {
+            userId = settings.password.c_str();
+        } else {
+            userId = "";
+        }
+        userIdLen = strlen(userId)+1;
+        if (write(proxySocketFd, &request, sizeof(request)) < 0
+            || write(proxySocketFd, userId, userIdLen) < 0
+            )
+        {
+            throw std::runtime_error("write to upstream proxy failed during CONNECT");
+        }
+
+        Socks4Packet response = {};
+
+        if (read_exactly(proxySocketFd, &response, sizeof(response)) != sizeof(response)) {
+            throw std::runtime_error("read from upstream proxy failed during CONNECT");
+        }
+
+        if (response.version != 0) {
+            throw std::runtime_error("upstream proxy protocol mismatch");
+        }
+
+        switch (response.command) {
+        case 90:
+            // Success!
+            break;
+        case 91:
+            throw std::runtime_error("upstream proxy failed to establish connection to endpoint or rejected connection");
+        case 92:
+        case 93:
+            throw std::runtime_error("upstream proxy identd authentication failure");
+        default:
+            throw std::runtime_error("upstream proxy protocol mismatch");
+        }
+    };
+
     void run() {
         Cleaner clientSocketFdCleaner([this] {
                 close(this->clientSocketFd);
@@ -184,14 +371,15 @@ public:
             throw std::runtime_error("could not connect to upstream proxy");
         }
 
-        std::string tunnelRequest = "CONNECT " + targetHost + ":" + std::to_string(targetPort) + " HTTP/1.1\nHost: " + targetHost + ":" + std::to_string(targetPort) + "\n\n";
-
-        if (write(proxySocketFd, tunnelRequest.c_str(), tunnelRequest.length()) < 0) {
-            throw std::runtime_error("write to upstream proxy failed during CONNECT");
-        }
-
-        if (get_proxy_status(proxySocketFd) != 200) {
-            throw std::runtime_error("upstream proxy failed to establish connection to endpoint");
+        switch (settings.protocol) {
+        case ProxySettings::Protocol::HTTP:
+            http_connect(proxySocketFd);
+            break;
+        case ProxySettings::Protocol::SOCKS4:
+            socks4_connect(proxySocketFd);
+            break;
+        default:
+            throw std::runtime_error("invalid proxy protocol");
         }
 
         // We're finally tunnling proper data!
@@ -352,7 +540,7 @@ public:
                 int connectPort = ntohs(connectedServerAddress.sin_port);
                 std::cerr << "Connect " << clientHost << " -> " << connectHost << ":" << connectPort << " (" << acceptedSocketFd << ")" << std::endl;
 
-                Proxy proxy(proxySettings, acceptedSocketFd, clientHost, connectHost, connectPort);
+                Proxy proxy(proxySettings, acceptedSocketFd, clientHost, connectedServerAddress);
                 try {
                     proxy.run();
                 } catch (const std::exception& e) {
@@ -372,20 +560,76 @@ public:
 };
 
 int main(int argc, char **argv) {
-    if (argc != 4) {
+    ProxySettings::Protocol protocol = ProxySettings::Protocol::HTTP;
+    std::string proxyHost;
+    int proxyPort;
+    int listenPort;
+    std::string username;
+    std::string password;
+    bool promptPassword;
+
+    int c;
+    while ((c = getopt(argc, argv, "t:u:pP:")) != -1) {
+        switch (c) {
+        case 't':
+            if (strcmp(optarg, "http") == 0) {
+                protocol = ProxySettings::Protocol::HTTP;
+            }
+            else if (strcmp(optarg, "socks4") == 0) {
+                protocol = ProxySettings::Protocol::SOCKS4;
+            }
+            else {
+                std::cerr << "Unknown protocol" << std::endl;
+                print_usage();
+                exit(1);
+            }
+            break;
+        case 'u':
+            username = optarg;
+            break;
+        case 'p':
+            promptPassword = true;
+            break;
+        case 'P':
+            password = optarg;
+            break;
+        default:
+            std::cerr << "Bad option" << std::endl;
+            print_usage();
+            exit(1);
+        }
+    }
+    if (argc - optind != 3) {
         print_usage();
         exit(1);
     }
-    int proxyPort;
-    int listenPort;
     try {
-        proxyPort = std::stoi(argv[2]);
-        listenPort = std::stoi(argv[3]);
+        proxyHost = argv[optind];
+        proxyPort = std::stoi(argv[optind+1]);
+        listenPort = std::stoi(argv[optind+2]);
     } catch (const std::invalid_argument&) {
         print_usage();
         exit(1);
     }
-    Server(ProxySettings(argv[1], proxyPort), listenPort).run();
+
+    if (promptPassword) {
+        struct termios tty;
+        tcgetattr(STDIN_FILENO, &tty);
+        tty.c_lflag &= ~ECHO;
+        tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+        std::cerr << "Please enter your proxy's password:" << std::endl;
+        char passwordCstr[256] = {};
+        std::cin.getline(passwordCstr, 256);
+        password = passwordCstr;
+        tty.c_lflag |= ECHO;
+        tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+        if (std::cin.fail()) {
+            std::cerr << "Failed to get password from stdin" << std::endl;
+            exit(1);
+        }
+    }
+
+    Server(ProxySettings(protocol, proxyHost, proxyPort, username, password), listenPort).run();
 
     // Unreachable?
     return 1;
