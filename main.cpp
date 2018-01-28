@@ -25,7 +25,7 @@ Usage:
     transproxify [OPTIONS...] PROXY_HOST PROXY_PORT LISTEN_PORT
 
 Synopsis:
-    Perform transparent proxying through an HTTP or SOCKS proxy.
+    Perform transparent TCP proxying through an HTTP or SOCKS4/5 proxy.
 
     Not all software supports configuring proxies. With transproxify, you can
     force communications to pass through a proxy from inside the router.
@@ -45,7 +45,7 @@ Synopsis:
             -j REDIRECT --to-port 10000
       # transproxify proxyserver 8080 10000
 
-    If your transparent proxying machine isn't already set up to do so, it may 
+    If your transparent proxying machine isn't already set up to do so, it may
     also be necessary to forward other ports. A quick (and potentially
     dangerous) way to do this would be using:
 
@@ -59,22 +59,28 @@ Synopsis:
 Options:
     -t PROTOCOL
         Specify the upstream proxy's protocol. Default is http.
-        Valid choices are: http, socks4
+        Valid choices are: http, socks4, socks5
     -u USERNAME
         Specify the username for proxy authentication.
     -p
         Prompt for a password for proxy authentication at startup.
     -P PASSWORD
         Specify the password for proxy authentication. Note that users on the
-        same system can see passwords entered like this in process tables.
+        same system can view passwords entered in this way via process tables.
 
 HTTP proxy authentication:
-    If a username and password are supplied, transproxy will send a
+    If a username and password are supplied, transproxify will send a
     Proxy-Authorization header using the basic authorization scheme.
 
 SOCKS4 proxy authentication:
-    If a username or password is supplied, transproxy will use this as the
+    If a username or password is supplied, transproxify will use this as the
     UserId in requests to the socks server. Else, a blank UserID is sent.
+
+SOCKS5 proxy authentication:
+    If a username and password is supplied, transproxify will offer to
+    authenticate using the username and password authentication method as well
+    as the no authentication method. If no username or password is given, only
+    the no authentication method is attempted.
 )END_USAGE";
 
     std::cerr << usage;
@@ -94,6 +100,33 @@ ssize_t read_exactly(int fd, void* buf, size_t count) {
             return r;
         } else if (r == 0) {
             return i;
+        } else {
+            i += r;
+        }
+    }
+    return i;
+}
+
+/// Used for constructing packets before write.
+ssize_t build_packet(void* packet, size_t max_packet_length, size_t* packet_len, const void* buf, size_t count) {
+    if (*packet_len + count > max_packet_length) {
+        return -1;
+    }
+    memcpy((char*)packet + *packet_len, buf, count);
+    *packet_len += count;
+    return count;
+}
+
+/// write(), but keep writing until count bytes written.
+///
+/// Returns -1 on any errors (well, whatever read() does).
+/// Otherwise, never returns less than count.
+ssize_t write_exactly(int fd, const void* buf, size_t count) {
+    int i = 0;
+    while (i < count) {
+        int r = write(fd, ((const char*)buf)+i, count-i);
+        if (r < 0) {
+            return r;
         } else {
             i += r;
         }
@@ -164,6 +197,7 @@ public:
     enum class Protocol {
         HTTP,
         SOCKS4,
+        SOCKS5,
     };
 
 private:
@@ -200,6 +234,17 @@ public:
         case Protocol::SOCKS4:
             if (!username.empty() && !password.empty()) {
                 throw std::runtime_error("need only one of username or password for SOCKS4");
+            }
+            break;
+        case Protocol::SOCKS5:
+            if (username.empty() != password.empty()) {
+                throw std::runtime_error("got only one of username or password for SOCKS5");
+            }
+            if (username.size() > 255) {
+                throw std::runtime_error("username too long for SOCKS5");
+            }
+            if (password.size() > 255) {
+                throw std::runtime_error("password too long for SOCKS5");
             }
             break;
         default:
@@ -287,7 +332,7 @@ public:
             + (!settings.username.empty() ? "Proxy-Authorization: Basic " + base64encode(settings.username + ":" + settings.password) + "\n" : "")
             + "\n";
 
-        if (write(proxySocketFd, tunnelRequest.c_str(), tunnelRequest.length()) < 0) {
+        if (write_exactly(proxySocketFd, tunnelRequest.c_str(), tunnelRequest.length()) < 0) {
             throw std::runtime_error("write to upstream proxy failed during CONNECT");
         }
 
@@ -312,9 +357,11 @@ public:
         };
 #pragma pack(pop)
 
+        char packet[65536] = {};
+        size_t packetLen = 0;
+
         Socks4Packet request = {4, 1, targetAddress.sin_port, targetAddress.sin_addr.s_addr};
 
-        // Might generate two TCP packets. Dunno if that breaks anything.
         const char* userId;
         size_t userIdLen;
         if (!settings.username.empty()) {
@@ -325,8 +372,11 @@ public:
             userId = "";
         }
         userIdLen = strlen(userId)+1;
-        if (write(proxySocketFd, &request, sizeof(request)) < 0
-            || write(proxySocketFd, userId, userIdLen) < 0
+
+        packetLen = 0;
+        if (build_packet(packet, sizeof(packet), &packetLen, &request, sizeof(request)) < 0
+            || build_packet(packet, sizeof(packet), &packetLen, userId, userIdLen) < 0
+            || write_exactly(proxySocketFd, packet, packetLen) < 0
             )
         {
             throw std::runtime_error("write to upstream proxy failed during CONNECT");
@@ -356,6 +406,168 @@ public:
         }
     };
 
+    void socks5_connect(int proxySocketFd) {
+#pragma pack(push, 1)
+        struct Socks5Packet1 {
+            uint8_t version;
+            uint8_t method_count;
+        };
+        struct Socks5Packet2 {
+            uint8_t version;
+            uint8_t method;
+        };
+        struct Socks5Packet3 {
+            uint8_t version;
+            uint8_t command;
+            uint8_t reserved;
+            uint8_t address_type; // Must be 1 for our purposes.
+        };
+#pragma pack(pop)
+
+        char packet[65536] = {};
+        size_t packetLen = 0;
+
+        std::vector<uint8_t> methods;
+        methods.emplace_back(0x00);
+        if (!settings.username.empty()) {
+            methods.emplace_back(0x02);
+        }
+
+        Socks5Packet1 request1 = {5, uint8_t(methods.size())};
+
+        packetLen = 0;
+        if (build_packet(packet, sizeof(packet), &packetLen, &request1, sizeof(request1)) < 0
+            || build_packet(packet, sizeof(packet), &packetLen, methods.data(), sizeof(uint8_t) * methods.size()) < 0
+            || write_exactly(proxySocketFd, packet, packetLen) < 0
+            )
+        {
+            throw std::runtime_error("write to upstream proxy failed during auth negotiation");
+        }
+
+        Socks5Packet2 response1 = {};
+
+        if (read_exactly(proxySocketFd, &response1, sizeof(response1)) != sizeof(response1)) {
+            throw std::runtime_error("read from upstream proxy failed during auth negotiation");
+        }
+
+        if (response1.version != 5) {
+            throw std::runtime_error("upstream proxy protocol mismatch");
+        }
+        switch (response1.method) {
+        case 0x00:
+            break;
+        case 0x02:
+            if (settings.username.empty()) {
+                // Protocol mismatch?
+                throw std::runtime_error("upstream proxy selected username and password authentication where no authentication was expected");
+            }
+            {
+                uint8_t version = 1;
+                // Lengths already checked in ProxySettings
+                uint8_t usernameLen = settings.username.length();
+                const char* username = settings.username.c_str();
+                uint8_t passwordLen = settings.password.length();
+                const char* password = settings.password.c_str();
+
+                packetLen = 0;
+                if (build_packet(packet, sizeof(packet), &packetLen, &version, sizeof(version)) < 0
+                    || build_packet(packet, sizeof(packet), &packetLen, &usernameLen, sizeof(usernameLen)) < 0
+                    || build_packet(packet, sizeof(packet), &packetLen, username, usernameLen) < 0
+                    || build_packet(packet, sizeof(packet), &packetLen, &passwordLen, sizeof(passwordLen)) < 0
+                    || build_packet(packet, sizeof(packet), &packetLen, password, passwordLen) < 0
+                    || write_exactly(proxySocketFd, packet, packetLen) < 0
+                    )
+                {
+                    throw std::runtime_error("write to upstream proxy failed during authentication");
+                }
+                if (read_exactly(proxySocketFd, &version, sizeof(version)) != sizeof(version)) {
+                    throw std::runtime_error("read from upstream proxy failed during authentication");
+                }
+                if (version != 1) {
+                    throw std::runtime_error("upstream proxy protocol mismatch");
+                }
+                uint8_t status = 0;
+                if (read_exactly(proxySocketFd, &status, sizeof(status)) != sizeof(status)) {
+                    throw std::runtime_error("read from upstream proxy failed during authentication");
+                }
+                if (status != 0) {
+                    throw std::runtime_error("upstream proxy authentication failure");
+                }
+            }
+            break;
+        case 0xff:
+            throw std::runtime_error("upstream proxy no authentication method");
+        default:
+            throw std::runtime_error("upstream proxy protocol mismatch");
+        }
+
+        Socks5Packet3 request2 = {5, 1, 0, 1};
+
+        packetLen = 0;
+        if (build_packet(packet, sizeof(packet), &packetLen, &request2, sizeof(request2)) < 0
+            || build_packet(packet, sizeof(packet), &packetLen, &targetAddress.sin_addr.s_addr, sizeof(targetAddress.sin_addr.s_addr)) < 0
+            || build_packet(packet, sizeof(packet), &packetLen, &targetAddress.sin_port, sizeof(targetAddress.sin_port)) < 0
+            || write_exactly(proxySocketFd, packet, packetLen) < 0
+            )
+        {
+            throw std::runtime_error("write to upstream proxy failed during CONNECT");
+        }
+
+        Socks5Packet3 response2 = {};
+
+        if (read_exactly(proxySocketFd, &response2, sizeof(response2)) != sizeof(response2)) {
+            throw std::runtime_error("read from upstream proxy failed during CONNECT");
+        }
+
+        if (response2.version != 5) {
+            throw std::runtime_error("upstream proxy protocol mismatch");
+        }
+
+        switch (response2.command) {
+        case 0:
+            // Success!
+            break;
+        case 2:
+            throw std::runtime_error("upstream proxy rejected connection not allowed by ruleset");
+        default:
+            throw std::runtime_error("upstream proxy failed to establish connection to endpoint or rejected connection");
+        }
+
+        char discard[256] = {};
+        switch (response2.address_type) {
+        case 1:
+            if (read_exactly(proxySocketFd, &discard, 4) != sizeof(response2)) {
+                throw std::runtime_error("read from upstream proxy failed during CONNECT");
+            }
+            break;
+        case 3:
+            {
+                uint8_t len;
+                if (read_exactly(proxySocketFd, &len, sizeof(len)) != sizeof(len)) {
+                    throw std::runtime_error("read from upstream proxy failed during CONNECT");
+                }
+                if (len == 0) {
+                    throw std::runtime_error("upstream proxy sent zero-length domain");
+                }
+                if (read_exactly(proxySocketFd, &discard, len) != len) {
+                    throw std::runtime_error("read from upstream proxy failed during CONNECT");
+                }
+            }
+            break;
+        case 4:
+            if (read_exactly(proxySocketFd, &discard, 16) != 16) {
+                throw std::runtime_error("read from upstream proxy failed during CONNECT");
+            }
+            break;
+        default:
+            throw std::runtime_error("upstream proxy protocol mismatch");
+        }
+
+        if (read_exactly(proxySocketFd, &discard, 2) != 2) {
+            throw std::runtime_error("read from upstream proxy failed during CONNECT");
+        }
+    };
+
     void run() {
         Cleaner clientSocketFdCleaner([this] {
                 close(this->clientSocketFd);
@@ -377,6 +589,9 @@ public:
             break;
         case ProxySettings::Protocol::SOCKS4:
             socks4_connect(proxySocketFd);
+            break;
+        case ProxySettings::Protocol::SOCKS5:
+            socks5_connect(proxySocketFd);
             break;
         default:
             throw std::runtime_error("invalid proxy protocol");
@@ -407,7 +622,7 @@ public:
                         std::cerr << "CliHUP  " << clientHost << " -> " << targetHost << ":" << targetPort << " (" << clientSocketFd << ", " << proxySocketFd << ")" << std::endl;
                         shutdown(proxySocketFd, SHUT_WR);
                     } else {
-                        if (write(proxySocketFd, data, data_len) < 0) {
+                        if (write_exactly(proxySocketFd, data, data_len) < 0) {
                             throw std::runtime_error("upstream proxy write error");
                         }
                     }
@@ -422,7 +637,7 @@ public:
                         std::cerr << "ProHUP  " << clientHost << " -> " << targetHost << ":" << targetPort << " (" << clientSocketFd << ", " << proxySocketFd << ")" << std::endl;
                         shutdown(clientSocketFd, SHUT_WR);
                     } else {
-                        if (write(clientSocketFd, data, data_len) < 0) {
+                        if (write_exactly(clientSocketFd, data, data_len) < 0) {
                             throw std::runtime_error("client write error");
                         }
                     }
@@ -455,7 +670,7 @@ public:
         Cleaner listeningSocketFdCleaner([&listeningSocketFd] {
                 close(listeningSocketFd);
             });
-        
+
         struct sockaddr_in serverAddress = {};
         serverAddress.sin_family = AF_INET;
         serverAddress.sin_port = htons(listenPort);
@@ -577,6 +792,9 @@ int main(int argc, char **argv) {
             }
             else if (strcmp(optarg, "socks4") == 0) {
                 protocol = ProxySettings::Protocol::SOCKS4;
+            }
+            else if (strcmp(optarg, "socks5") == 0) {
+                protocol = ProxySettings::Protocol::SOCKS5;
             }
             else {
                 std::cerr << "Unknown protocol" << std::endl;
