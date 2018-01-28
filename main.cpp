@@ -1,3 +1,5 @@
+// Copyright Ashley Newson 2018
+
 #include <iostream>
 #include <functional>
 #include <stdexcept>
@@ -605,7 +607,7 @@ public:
         }
 
         // We're finally tunnling proper data!
-        std::cerr << "Tunnel  " << clientHost << " -> " << targetHost << ":" << targetPort << " (" << clientSocketFd << ", " << proxySocketFd << ")" << std::endl;
+        std::cerr << getpid() << "\t" << "Tunnel  " << clientHost << " -> " << targetHost << ":" << targetPort << std::endl;
 
         char data[65536] = {};
         int data_len = 0;
@@ -626,7 +628,7 @@ public:
                     }
                     if (data_len == 0) {
                         clientOpen = false;
-                        std::cerr << "CliHUP  " << clientHost << " -> " << targetHost << ":" << targetPort << " (" << clientSocketFd << ", " << proxySocketFd << ")" << std::endl;
+                        std::cerr << getpid() << "\t" << "CliHUP  " << clientHost << " -> " << targetHost << ":" << targetPort << std::endl;
                         shutdown(proxySocketFd, SHUT_WR);
                     } else {
                         if (write_exactly(proxySocketFd, data, data_len) < 0) {
@@ -641,7 +643,7 @@ public:
                     }
                     if (data_len == 0) {
                         proxyOpen = false;
-                        std::cerr << "ProHUP  " << clientHost << " -> " << targetHost << ":" << targetPort << " (" << clientSocketFd << ", " << proxySocketFd << ")" << std::endl;
+                        std::cerr << getpid() << "\t" << "ProHUP  " << clientHost << " -> " << targetHost << ":" << targetPort << std::endl;
                         shutdown(clientSocketFd, SHUT_WR);
                     } else {
                         if (write_exactly(clientSocketFd, data, data_len) < 0) {
@@ -760,19 +762,19 @@ public:
                 char connectHost[256] = {};
                 inet_ntop(AF_INET, &connectedServerAddress.sin_addr, connectHost, sizeof(connectHost));
                 int connectPort = ntohs(connectedServerAddress.sin_port);
-                std::cerr << "Connect " << clientHost << " -> " << connectHost << ":" << connectPort << " (" << acceptedSocketFd << ")" << std::endl;
+                std::cerr << getpid() << "\t" << "Connect " << clientHost << " -> " << connectHost << ":" << connectPort << std::endl;
 
                 Proxy proxy(proxySettings, acceptedSocketFd, clientHost, connectedServerAddress);
                 try {
                     proxy.run();
                 } catch (const std::exception& e) {
-                    std::cerr << "Error: " << e.what() << std::endl;
+                    std::cerr << getpid() << "\t" << "Error: " << e.what() << std::endl;
                 }
                 // Reset the connection (well, try)
                 connectedServerAddress.sin_family = AF_UNSPEC;
                 connect(acceptedSocketFd, (struct sockaddr*)&connectedServerAddress, sizeof(connectedServerAddress));
                 close(acceptedSocketFd);
-                std::cerr << "Close   " << clientHost << " -> " << connectHost << ":" << connectPort << " (" << acceptedSocketFd << ")" << std::endl;
+                std::cerr << getpid() << "\t" << "Close   " << clientHost << " -> " << connectHost << ":" << connectPort << std::endl;
                 exit(0);
             } else {
                 close(acceptedSocketFd); // Parent doesn't need this (anymore).
@@ -784,11 +786,11 @@ public:
 int main(int argc, char **argv) {
     ProxySettings::Protocol protocol = ProxySettings::Protocol::HTTP;
     std::string proxyHost;
-    int proxyPort;
-    int listenPort;
+    int proxyPort = 0;
+    int listenPort = 0;
     std::string username;
     std::string password;
-    bool promptPassword;
+    bool promptPassword = false;
 
     int c;
     while ((c = getopt(argc, argv, "t:u:pP:")) != -1) {
