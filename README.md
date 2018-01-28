@@ -24,7 +24,7 @@ Transproxify can be run on a client, router, or man-in-the-middle machine.
 
 Use iptables. The required iptables rules required are different depending on the setup chosen.
 
-Routers (and man-in-the-middle) machines can redirect traffic to transproxify using:
+For example, routers (and man-in-the-middle machines) can redirect HTTP and HTTPS traffic through transproxify to proxyserver:8080 using:
 
 ```sh
 echo 1 > /proc/sys/net/ipv4/ip_forward
