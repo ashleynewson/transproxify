@@ -1,7 +1,7 @@
 all: transproxify
 
 transproxify: main.cpp
-	g++ -O3 main.cpp -o transproxify
+	g++ -Wall -Wextra -O3 -o transproxify main.cpp
 
 clean:
 	$(RM) transproxify

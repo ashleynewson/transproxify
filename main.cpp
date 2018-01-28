@@ -102,7 +102,7 @@ SOCKS5 proxy authentication:
 ///
 /// Returns -1 on any errors (well, whatever read() does).
 ssize_t read_exactly(int fd, void* buf, size_t count) {
-    int i = 0;
+    size_t i = 0;
     while (i < count) {
         int r = read(fd, ((char*)buf)+i, count-i);
         if (r < 0) {
@@ -131,7 +131,7 @@ ssize_t build_packet(void* packet, size_t max_packet_length, size_t* packet_len,
 /// Returns -1 on any errors (well, whatever read() does).
 /// Otherwise, never returns less than count.
 ssize_t write_exactly(int fd, const void* buf, size_t count) {
-    int i = 0;
+    size_t i = 0;
     while (i < count) {
         int r = write(fd, ((const char*)buf)+i, count-i);
         if (r < 0) {
@@ -287,7 +287,7 @@ public:
 
     int get_http_proxy_status(int proxySocketFd) {
         char line[256] = {};
-        int i;
+        size_t i;
         for (i = 0; i < sizeof(line); i++) {
             int c = 0;
             do {
@@ -615,8 +615,8 @@ public:
         bool proxyOpen = true;
         while (clientOpen || proxyOpen) {
             struct pollfd fds[] = {
-                { clientSocketFd, short(clientOpen ? (POLLIN | POLLHUP) : -1) },
-                { proxySocketFd, short(proxyOpen ? (POLLIN | POLLHUP) : -1) },
+                { clientSocketFd, short(clientOpen ? (POLLIN | POLLHUP) : -1), 0 },
+                { proxySocketFd, short(proxyOpen ? (POLLIN | POLLHUP) : -1), 0 },
             };
             if (poll(fds, 2, -1) < 0) {
                 throw std::runtime_error("poll error whilst proxying");
@@ -714,7 +714,10 @@ public:
             else if (pid == 0) {
                 // Child!
 
-                int r = prctl(PR_SET_PDEATHSIG, SIGTERM);
+                if (prctl(PR_SET_PDEATHSIG, SIGTERM) < 0) {
+                    std::cerr << "Could not tie lifetime to parent lifetime" << std::endl;
+                    exit(1);
+                }
                 if (getppid() != parent_pid) {
                     // We seem to have outlived out parent already.
                     exit(1);
