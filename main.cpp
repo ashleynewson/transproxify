@@ -56,6 +56,13 @@ Synopsis:
 
       # arpspoof -i NETWORK_INTERFACE -t CLIENT_ADDRESS ROUTER_ADDRESS
 
+    Transproxify can also be run on the client itself if the client's iptables
+    rules are set up to redirect traffic by using OUTPUT instead of PREROUTING:
+
+      # iptables -t nat -A OUTPUT -p tcp \
+            --match multiport --dports 80,443 \
+            -j REDIRECT --to-port 10000
+
 Options:
     -t PROTOCOL
         Specify the upstream proxy's protocol. Default is http.
