@@ -23,7 +23,7 @@
 #include "Util.hpp"
 #include "Cleaner.hpp"
 #include "ProxySettings.hpp"
-#include "Server.hpp"
+#include "TcpServer.hpp"
 
 void print_usage() {
     const char* usage = R"END_USAGE(Transproxify - Copyright Ashley Newson 2018
@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    Server(ProxySettings(proxyProtocol, proxiedProtocol, proxyHost, proxyPort, username, password), listenPort).run();
+    TcpServer(ProxySettings(proxyProtocol, proxiedProtocol, proxyHost, proxyPort, username, password), listenPort).run();
 
     // Unreachable?
     return 1;

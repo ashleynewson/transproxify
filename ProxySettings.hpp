@@ -43,14 +43,14 @@ public:
         }
     }
 
-private:
-    friend class Proxy;
+public:
     ProxyProtocol proxyProtocol;
     ProxiedProtocol proxiedProtocol;
     std::string username;
     std::string password;
     struct sockaddr_in proxyAddress;
 
+private:
     static inline void check_support(ProxyProtocol proxy, ProxiedProtocol proxied, std::initializer_list<ProxiedProtocol> supportList) {
         for (const ProxiedProtocol& supported : supportList) {
             if (proxied == supported) {

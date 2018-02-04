@@ -1,22 +1,25 @@
-#ifndef HGUARD_SERVER
-#define HGUARD_SERVER
+#ifndef HGUARD_TCP_SERVER
+#define HGUARD_TCP_SERVER
 
 #include "ProxySettings.hpp"
 #include "Proxy.hpp"
+#include "HttpTcpProxy.hpp"
+#include "Socks4TcpProxy.hpp"
+#include "Socks5TcpProxy.hpp"
 
-class Server {
+class TcpServer {
 private:
     ProxySettings proxySettings;
     int listenPort;
 
 public:
-    Server(ProxySettings proxySettings, int listenPort):
+    TcpServer(ProxySettings proxySettings, int listenPort):
         proxySettings(proxySettings),
         listenPort(listenPort)
     {
     }
 
-    ~Server() {
+    ~TcpServer() {
     }
 
     void run() {
@@ -115,9 +118,21 @@ public:
                 int connectPort = ntohs(connectedServerAddress.sin_port);
                 std::cerr << getpid() << "\t" << "Connect " << clientHost << " -> " << connectHost << ":" << connectPort << std::endl;
 
-                Proxy proxy(proxySettings, acceptedSocketFd, clientHost, connectedServerAddress);
+                // Proxy proxy(proxySettings, acceptedSocketFd, clientHost, connectedServerAddress);
                 try {
-                    proxy.run();
+                    switch (proxySettings.proxyProtocol) {
+                    case ProxySettings::ProxyProtocol::HTTP:
+                        HttpTcpProxy(proxySettings, acceptedSocketFd).run();
+                        break;
+                    case ProxySettings::ProxyProtocol::SOCKS4:
+                        Socks4TcpProxy(proxySettings, acceptedSocketFd).run();
+                        break;
+                    case ProxySettings::ProxyProtocol::SOCKS5:
+                        Socks5TcpProxy(proxySettings, acceptedSocketFd).run();
+                        break;
+                    default:
+                        throw std::runtime_error("Cannot make unknown proxy type");
+                    }
                 } catch (const std::exception& e) {
                     std::cerr << getpid() << "\t" << "Error: " << e.what() << std::endl;
                 }
