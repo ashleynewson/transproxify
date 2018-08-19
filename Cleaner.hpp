@@ -1,25 +1,50 @@
 #ifndef HGUARD_CLEANER
 #define HGUARD_CLEANER
 
+#include <memory>
+
 class Cleaner {
 private:
-    bool enabled;
-    std::function<void()> cleaner;
+    class Trigger {
+        bool enabled;
+        std::function<void()> callback;
+    public:
+        Trigger(std::function<void()> callback):
+            enabled(true),
+            callback(callback)
+        {
+        }
+        ~Trigger() {
+            clean();
+        }
+        void disable() {
+            enabled = false;
+        }
+        void clean() {
+            if (enabled) {
+                callback();
+                enabled = false;
+            }
+        }
+    };
+    std::shared_ptr<Trigger> trigger;
 public:
-    Cleaner(std::function<void()> cleaner):
-        enabled(true),
-        cleaner(cleaner)
+    Cleaner():
+        trigger(nullptr)
     {
     }
-    ~Cleaner() {
+    Cleaner(std::function<void()> callback):
+        trigger(std::make_shared<Trigger>(callback))
+    {
     }
     void disable() {
-        enabled = false;
+        if (trigger) {
+            trigger->disable();
+        }
     }
     void clean() {
-        if (enabled) {
-            cleaner();
-            enabled = false;
+        if (trigger) {
+            trigger->clean();
         }
     }
 };

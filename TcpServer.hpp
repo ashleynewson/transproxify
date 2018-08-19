@@ -53,7 +53,6 @@ public:
             if (acceptedSocketFd < 0) {
                 perror("error");
                 std::cerr << "Error during accept." << std::endl;
-                throw std::runtime_error("die");
                 continue;
             }
 
@@ -118,7 +117,6 @@ public:
                 int connectPort = ntohs(connectedServerAddress.sin_port);
                 std::cerr << getpid() << "\t" << "Connect " << clientHost << " -> " << connectHost << ":" << connectPort << std::endl;
 
-                // Proxy proxy(proxySettings, acceptedSocketFd, clientHost, connectedServerAddress);
                 try {
                     switch (proxySettings.proxyProtocol) {
                     case ProxySettings::ProxyProtocol::HTTP:

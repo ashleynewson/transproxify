@@ -24,6 +24,7 @@
 #include "Cleaner.hpp"
 #include "ProxySettings.hpp"
 #include "TcpServer.hpp"
+#include "UdpServer.hpp"
 
 void print_usage() {
     const char* usage = R"END_USAGE(Transproxify - Copyright Ashley Newson 2018
@@ -73,7 +74,7 @@ Synopsis:
 Options:
     -t PROXY_PROTOCOL
         Specify the upstream proxy's protocol. Default is http.
-        Valid choices are: http, socks4, socks5
+        Valid choices are: direct, http, socks4, socks5
     -r PROXIED_PROTOCOL
         Specify the transport layer protocol to redirect via the given proxy.
         Not all options are supported by all proxy protocols. Default is tcp.
@@ -85,6 +86,18 @@ Options:
     -P PASSWORD
         Specify the password for proxy authentication. Note that users on the
         same system can view passwords entered in this way via process tables.
+
+UDP setup:
+    Setting up UDP proxying is a little different. We must create a new lookup
+    table for specially marked packets allowing us to treat any address as if
+    it was local. We must then mark and redirect our desired packets using
+    iptables. For example, to proxy all traffic using UDP port 53:
+
+      # ip rule add fwmark 1 lookup 100
+      # ip route add local 0.0.0.0/0 dev lo table 100
+      # iptables -t mangle -A PREROUTING -p udp --dport 53 \
+            -j TPROXY --tproxy-mark 0x1/0x1 --on-port 10000
+      # transproxify -r udp -t socks5 proxyserver 1080 10000
 
 HTTP proxy authentication:
     If a username and password are supplied, transproxify will send a
@@ -119,7 +132,10 @@ int main(int argc, char **argv) {
     while ((c = getopt(argc, argv, "t:r:u:pP:")) != -1) {
         switch (c) {
         case 't':
-            if (strcmp(optarg, "http") == 0) {
+            if (strcmp(optarg, "direct") == 0) {
+                proxyProtocol = ProxySettings::ProxyProtocol::DIRECT;
+            }
+            else if (strcmp(optarg, "http") == 0) {
                 proxyProtocol = ProxySettings::ProxyProtocol::HTTP;
             }
             else if (strcmp(optarg, "socks4") == 0) {
@@ -129,7 +145,7 @@ int main(int argc, char **argv) {
                 proxyProtocol = ProxySettings::ProxyProtocol::SOCKS5;
             }
             else {
-                std::cerr << "Unknown protocol" << std::endl;
+                std::cerr << "Unknown proxy protocol" << std::endl;
                 print_usage();
                 exit(1);
             }
@@ -142,7 +158,7 @@ int main(int argc, char **argv) {
                 proxiedProtocol = ProxySettings::ProxiedProtocol::UDP;
             }
             else {
-                std::cerr << "Unknown protocol" << std::endl;
+                std::cerr << "Unknown proxied protocol" << std::endl;
                 print_usage();
                 exit(1);
             }
@@ -192,8 +208,17 @@ int main(int argc, char **argv) {
         }
     }
 
-    TcpServer(ProxySettings(proxyProtocol, proxiedProtocol, proxyHost, proxyPort, username, password), listenPort).run();
+    ProxySettings proxySettings(proxyProtocol, proxiedProtocol, proxyHost, proxyPort, username, password);
+
+    switch (proxiedProtocol) {
+    case ProxySettings::ProxiedProtocol::TCP:
+        TcpServer(proxySettings, listenPort).run();
+        break;
+    case ProxySettings::ProxiedProtocol::UDP:
+        UdpServer(proxySettings, listenPort).run();
+        break;
+    }
 
     // Unreachable?
-    return 1;
+    throw std::runtime_error("Unreachable code");
 }

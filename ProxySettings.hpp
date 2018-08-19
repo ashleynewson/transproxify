@@ -8,6 +8,7 @@ class Proxy;
 struct ProxySettings {
 public:
     enum class ProxyProtocol {
+        DIRECT,
         HTTP,
         SOCKS4,
         SOCKS5,
@@ -16,11 +17,10 @@ public:
         TCP,
         UDP,
     };
-    // template<class ProtocolType>
-    // static inline const char* protocol_name(ProtocolType);
-    // template<>
     static inline const char* protocol_name(ProxyProtocol protocol) {
         switch (protocol) {
+        case ProxyProtocol::DIRECT:
+            return "Direct";
         case ProxyProtocol::HTTP:
             return "HTTP";
         case ProxyProtocol::SOCKS4:
@@ -31,7 +31,6 @@ public:
             return "Invalid Proxy Protocol";
         }
     }
-    // template<>
     static inline const char* protocol_name(ProxiedProtocol protocol) {
         switch (protocol) {
         case ProxiedProtocol::TCP:
@@ -60,24 +59,6 @@ private:
         throw std::runtime_error(std::string() + protocol_name(proxy) + " does not support proxying " + protocol_name(proxied));
     }
 
-    // template<class Proxy, class Proxied, std::tuple<class... Supported>>
-    // struct check_support;
-    // template<Proxy, Proxied>
-    // struct check_support<Proxy, Proxied, std::tuple<>> {
-    //     static void check() {
-    //         throw std::runtime_error();
-    //     }
-    // };
-    // template<Proxy, Proxied, SupportedH, std::tuple<class... SupportedT>>
-    // struct check_support<Proxy, Proxied, std::tuple<SupportedH, SupportedT...>> {
-    //     static void check() {
-    //         if (std::is_same<Proxied, SupportedH>) {
-    //             return; // Found a match!
-    //         }
-    //         check_support<Proxy, Proxied, std::tuple<SupportedT...>>::check();
-    //     }
-    // }
-
 public:
     ProxySettings(ProxyProtocol proxyProtocol,
                   ProxiedProtocol proxiedProtocol,
@@ -101,6 +82,9 @@ public:
         proxyAddress.sin_port = htons(proxyPort);
 
         switch (proxyProtocol) {
+        case ProxyProtocol::DIRECT:
+            check_support(ProxyProtocol::DIRECT, proxiedProtocol, {ProxiedProtocol::UDP});
+            break;
         case ProxyProtocol::HTTP:
             check_support(ProxyProtocol::HTTP, proxiedProtocol, {ProxiedProtocol::TCP});
             if (username.empty() != password.empty()) {
