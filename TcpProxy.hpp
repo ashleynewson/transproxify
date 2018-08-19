@@ -7,59 +7,15 @@
 #include "ProxySettings.hpp"
 #include "Proxy.hpp"
 
-class TcpProxy : public Proxy {
+class TcpProxy : public virtual Proxy {
+private:
 protected:
     int clientSocketFd;
-    struct sockaddr_in clientAddress;
-    std::string clientHost;
-    struct sockaddr_in targetAddress;
-    std::string targetHost;
-    int targetPort;
 
-    TcpProxy(ProxySettings settings, int clientSocketFd):
-        Proxy(settings),
+    TcpProxy(ProxySettings settings, struct sockaddr_in clientAddress, struct sockaddr_in targetAddress, int clientSocketFd):
+        Proxy(settings, clientAddress, targetAddress),
         clientSocketFd(clientSocketFd)
     {
-        targetAddress = {};
-        socklen_t targetAddressLength = sizeof(targetAddress); // ???
-        if (getsockopt(clientSocketFd,
-                       SOL_IP,
-                       SO_ORIGINAL_DST,
-                       (struct sockaddr*)&targetAddress,
-                       &targetAddressLength
-                       ) < 0) {
-#ifdef ALLOW_DIRECT_CONNECTIONS
-            // Useful for debugging.
-            if (getsockname(clientSocketFd,
-                            (struct sockaddr*)&targetAddress,
-                            &targetAddressLength
-                            ) < 0) {
-                close(clientSocketFd);
-                exit(1);
-            }
-#else
-            close(clientSocketFd);
-            exit(1);
-#endif
-        }
-
-        char targetHostCstr[256] = {};
-        inet_ntop(AF_INET, &targetAddress.sin_addr, targetHostCstr, sizeof(targetHostCstr));
-        targetHost = targetHostCstr;
-        targetPort = ntohs(targetAddress.sin_port);
-
-        struct sockaddr_in clientAddress = {};
-        socklen_t clientAddressLength = sizeof(clientAddress); // ???
-        if (getpeername(clientSocketFd,
-                        (struct sockaddr*)&clientAddress,
-                        &clientAddressLength
-                        ) < 0) {
-            close(clientSocketFd);
-            exit(1);
-        }
-
-        char clientHost[256] = {};
-        inet_ntop(AF_INET, &clientAddress.sin_addr, clientHost, sizeof(clientHost));
     }
 
     virtual ~TcpProxy() {

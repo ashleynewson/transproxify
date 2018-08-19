@@ -17,38 +17,20 @@ class UdpServer;
 
 
 
-class UdpProxy : public Proxy {
+class UdpProxy : public virtual Proxy {
     friend class UdpServer;
 
 protected:
-    struct sockaddr_in clientAddress;
-    std::string clientHost;
-    int clientPort;
-    struct sockaddr_in targetAddress;
-    std::string targetHost;
-    int targetPort;
     short mappedPort;
     time_t startTime;
     time_t lastPacketTime;
 
 public:
     UdpProxy(ProxySettings settings, struct sockaddr_in clientAddress, struct sockaddr_in targetAddress):
-        Proxy(settings),
-        clientAddress(clientAddress),
-        targetAddress(targetAddress)
+        Proxy(settings, clientAddress, targetAddress)
     {
         startTime = time(nullptr);
         lastPacketTime = startTime;
-
-        char clientHostCStr[256] = {};
-        inet_ntop(AF_INET, &clientAddress.sin_addr, clientHostCStr, sizeof(clientHost));
-        clientHost = std::string(clientHostCStr);
-        clientPort = ntohs(clientAddress.sin_port);
-
-        char targetHostCStr[256] = {};
-        inet_ntop(AF_INET, &targetAddress.sin_addr, targetHostCStr, sizeof(targetHost));
-        targetHost = std::string(targetHostCStr);
-        targetPort = ntohs(targetAddress.sin_port);
     }
 
     virtual ~UdpProxy() {

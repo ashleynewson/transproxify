@@ -11,6 +11,7 @@ private:
     Cleaner targetSocketFdCleaner;
 public:
     DirectUdpProxy(ProxySettings settings, struct sockaddr_in clientAddress, struct sockaddr_in targetAddress):
+        Proxy(settings, clientAddress, targetAddress),
         UdpProxy(settings, clientAddress, targetAddress)
     {
         // to client

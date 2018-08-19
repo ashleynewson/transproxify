@@ -7,8 +7,9 @@
 
 class Socks4TcpProxy : public TcpProxy {
 public:
-    Socks4TcpProxy(ProxySettings settings, int clientSocketFd):
-        TcpProxy(settings, clientSocketFd)
+    Socks4TcpProxy(ProxySettings settings, struct sockaddr_in clientAddress, struct sockaddr_in targetAddress, int clientSocketFd):
+        Proxy(settings, clientAddress, targetAddress),
+        TcpProxy(settings, clientAddress, targetAddress, clientSocketFd)
     {
     }
 

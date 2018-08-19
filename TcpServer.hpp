@@ -22,6 +22,44 @@ public:
     ~TcpServer() {
     }
 
+    static struct sockaddr_in get_client_address(int clientSocketFd) {
+        struct sockaddr_in clientAddress = {};
+        socklen_t clientAddressLength = sizeof(clientAddress); // ???
+        if (getpeername(clientSocketFd,
+                        (struct sockaddr*)&clientAddress,
+                        &clientAddressLength
+                        ) < 0) {
+            close(clientSocketFd);
+            exit(1);
+        }
+        return clientAddress;
+    }
+    static struct sockaddr_in get_target_address(int clientSocketFd) {
+        struct sockaddr_in targetAddress = {};
+        socklen_t targetAddressLength = sizeof(targetAddress); // ???
+        if (getsockopt(clientSocketFd,
+                       SOL_IP,
+                       SO_ORIGINAL_DST,
+                       (struct sockaddr*)&targetAddress,
+                       &targetAddressLength
+                       ) < 0) {
+#ifdef ALLOW_DIRECT_CONNECTIONS
+            // Useful for debugging.
+            if (getsockname(clientSocketFd,
+                            (struct sockaddr*)&targetAddress,
+                            &targetAddressLength
+                            ) < 0) {
+                close(clientSocketFd);
+                exit(1);
+            }
+#else
+            close(clientSocketFd);
+            exit(1);
+#endif
+        }
+        return targetAddress;
+    }
+
     void run() {
         int listeningSocketFd(socket(AF_INET, SOCK_STREAM, 0));
         if (listeningSocketFd < 0) {
@@ -75,39 +113,8 @@ public:
 
                 close(listeningSocketFd); // Child doesn't need this.
 
-                struct sockaddr_in connectedServerAddress = {};
-                socklen_t connectedServerAddressLength = sizeof(connectedServerAddress); // ???
-                if (getsockopt(acceptedSocketFd,
-                               SOL_IP,
-                               SO_ORIGINAL_DST,
-                               (struct sockaddr*)&connectedServerAddress,
-                               &connectedServerAddressLength
-                               ) < 0) {
-                    std::cerr << "Got non-redirected request" << std::endl;
-#ifdef ALLOW_DIRECT_CONNECTIONS
-                    // Useful for debugging.
-                    if (getsockname(acceptedSocketFd,
-                                    (struct sockaddr*)&connectedServerAddress,
-                                    &connectedServerAddressLength
-                                    ) < 0) {
-                        close(acceptedSocketFd);
-                        exit(1);
-                    }
-#else
-                    close(acceptedSocketFd);
-                    exit(1);
-#endif
-                }
-
-                struct sockaddr_in connectedClientAddress = {};
-                socklen_t connectedClientAddressLength = sizeof(connectedClientAddress); // ???
-                if (getpeername(acceptedSocketFd,
-                                (struct sockaddr*)&connectedClientAddress,
-                                &connectedClientAddressLength
-                                ) < 0) {
-                    close(acceptedSocketFd);
-                    exit(1);
-                }
+                struct sockaddr_in connectedServerAddress = get_target_address(acceptedSocketFd);
+                struct sockaddr_in connectedClientAddress = get_client_address(acceptedSocketFd);
 
                 char clientHost[256] = {};
                 inet_ntop(AF_INET, &connectedClientAddress.sin_addr, clientHost, sizeof(clientHost));
@@ -120,13 +127,13 @@ public:
                 try {
                     switch (proxySettings.proxyProtocol) {
                     case ProxySettings::ProxyProtocol::HTTP:
-                        HttpTcpProxy(proxySettings, acceptedSocketFd).run();
+                        HttpTcpProxy(proxySettings, connectedClientAddress, connectedServerAddress, acceptedSocketFd).run();
                         break;
                     case ProxySettings::ProxyProtocol::SOCKS4:
-                        Socks4TcpProxy(proxySettings, acceptedSocketFd).run();
+                        Socks4TcpProxy(proxySettings, connectedClientAddress, connectedServerAddress, acceptedSocketFd).run();
                         break;
                     case ProxySettings::ProxyProtocol::SOCKS5:
-                        Socks5TcpProxy(proxySettings, acceptedSocketFd).run();
+                        Socks5TcpProxy(proxySettings, connectedClientAddress, connectedServerAddress, acceptedSocketFd).run();
                         break;
                     default:
                         throw std::runtime_error("Cannot make unknown proxy type");

@@ -7,8 +7,9 @@
 
 class HttpTcpProxy : public TcpProxy {
 public:
-    HttpTcpProxy(ProxySettings settings, int clientSocketFd):
-        TcpProxy(settings, clientSocketFd)
+    HttpTcpProxy(ProxySettings settings, struct sockaddr_in clientAddress, struct sockaddr_in targetAddress, int clientSocketFd):
+        Proxy(settings, clientAddress, targetAddress),
+        TcpProxy(settings, clientAddress, targetAddress, clientSocketFd)
     {
     }
 
