@@ -7,6 +7,7 @@
 #include "Proxy.hpp"
 #include "UdpProxy.hpp"
 #include "DirectUdpProxy.hpp"
+#include "Socks5UdpProxy.hpp"
 
 
 
@@ -93,6 +94,9 @@ private:
         case ProxySettings::ProxyProtocol::DIRECT:
             proxy = std::make_shared<DirectUdpProxy>(proxySettings, clientAddress, targetAddress);
             break;
+        case ProxySettings::ProxyProtocol::SOCKS5:
+            proxy = std::make_shared<Socks5UdpProxy>(proxySettings, clientAddress, targetAddress);
+            break;
         default:
             throw std::runtime_error("invalid proxy protocol");
         }
@@ -112,13 +116,17 @@ private:
 
         auto lookup = proxies.find(index);
         std::shared_ptr<UdpProxy> proxy;
-        if (lookup == proxies.end()) {
-            proxy = new_proxy(source, destination);
-        } else {
-            proxy = lookup->second;
-        }
+        try {
+            if (lookup == proxies.end()) {
+                proxy = new_proxy(source, destination);
+            } else {
+                proxy = lookup->second;
+            }
 
-        proxy->send_to_target(data, len);
+            proxy->send_to_target(data, len);
+        } catch (const std::exception& e) {
+            std::cerr << "\t" << "Error: " << e.what() << std::endl;
+        }
     }
 
     void recv(int fd) {
@@ -129,7 +137,11 @@ private:
         }
         UdpProxy& proxy = *(it->second);
 
-        proxy.check_socket(fd);
+        try {
+            proxy.check_socket(fd);
+        } catch (const std::exception& e) {
+            std::cerr << "\t" << "Error: " << e.what() << std::endl;
+        }
     }
 
 public:

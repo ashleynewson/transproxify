@@ -25,12 +25,12 @@ public:
         targetAddress(targetAddress)
     {
         char clientHostCStr[256] = {};
-        inet_ntop(AF_INET, &clientAddress.sin_addr, clientHostCStr, sizeof(clientHost));
+        inet_ntop(AF_INET, &clientAddress.sin_addr, clientHostCStr, sizeof(clientHostCStr));
         clientHost = std::string(clientHostCStr);
         clientPort = ntohs(clientAddress.sin_port);
 
         char targetHostCStr[256] = {};
-        inet_ntop(AF_INET, &targetAddress.sin_addr, targetHostCStr, sizeof(targetHost));
+        inet_ntop(AF_INET, &targetAddress.sin_addr, targetHostCStr, sizeof(targetHostCStr));
         targetHost = std::string(targetHostCStr);
         targetPort = ntohs(targetAddress.sin_port);
     }

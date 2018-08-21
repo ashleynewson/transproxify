@@ -10,6 +10,9 @@ protected:
     {
     }
 
+    virtual ~Socks5Proxy() {
+    }
+
     void socks5_greet_and_authenticate(int proxySocketFd) {
         char packet[65536] = {};
         size_t packetLen = 0;
@@ -157,6 +160,7 @@ protected:
         struct sockaddr_in bndAddress = {};
         bndAddress.sin_family = AF_INET;
         char addressData[256] = {};
+
         switch (response.address_type) {
         case 1:
             if (read_exactly(proxySocketFd, &addressData, 4) != sizeof(response)) {
@@ -184,7 +188,7 @@ protected:
                 if (server->h_addrtype != AF_INET) {
                     throw std::runtime_error("FIXME: Resolved to IPv6 address. Use getaddrinfo() instead.");
                 }
-                bcopy((char*)server->h_addr, &bndAddress.sin_addr.s_addr, server->h_length);
+                std::memcpy(&bndAddress.sin_addr.s_addr, (char*)server->h_addr, server->h_length);
             }
             break;
         case 4:

@@ -76,6 +76,9 @@ public:
         if (server == nullptr) {
             throw std::runtime_error("could not resolve proxy hostname");
         }
+        if (server->h_addrtype != AF_INET) {
+            throw std::runtime_error("FIXME: Resolved to IPv6 address. Use getaddrinfo() instead.");
+        }
         proxyAddress = {};
         proxyAddress.sin_family = AF_INET;
         bcopy((char*)server->h_addr, &proxyAddress.sin_addr.s_addr, server->h_length);
