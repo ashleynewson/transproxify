@@ -72,22 +72,31 @@ Synopsis:
             -j REDIRECT --to-port 10000
 
 Options:
-    -t PROXY_PROTOCOL
-        Specify the upstream proxy's protocol. Default is http.
-        Valid choices are: direct, http, socks4, socks5
     -r PROXIED_PROTOCOL
         Specify the transport layer protocol to redirect via the given proxy.
         Not all options are supported by all proxy protocols. Default is tcp.
         Valid choices are: tcp, udp
+    -t PROXY_PROTOCOL
+        Specify the upstream proxy's protocol. Default is http.
+        Valid choices for TCP are: direct, http, socks4, socks5
+        Valid choices for UDP are: direct, socks5
     -u USERNAME
         Specify the username for proxy authentication.
+
+        WARNING: all credentials are sent over the network in cleartext!
     -p
         Prompt for a password for proxy authentication at startup.
-    -P PASSWORD
-        Specify the password for proxy authentication. Note that users on the
-        same system can view passwords entered in this way via process tables.
 
-UDP setup:
+        WARNING: all credentials are sent over the network in cleartext!
+    -P PASSWORD
+        Specify the password for proxy authentication.
+
+        WARNING: Users on the same system can often view passwords entered in
+        this way by examining process tables.
+
+        WARNING: all credentials are sent over the network in cleartext!
+
+UDP Setup:
     Setting up UDP proxying is a little different. We must create a new lookup
     table for specially marked packets allowing us to treat any address as if
     it was local. We must then mark and redirect our desired packets using
@@ -98,6 +107,15 @@ UDP setup:
       # iptables -t mangle -A PREROUTING -p udp --dport 53 \
             -j TPROXY --tproxy-mark 0x1/0x1 --on-port 10000
       # transproxify -r udp -t socks5 proxyserver 1080 10000
+
+Direct Connections:
+    You can instruct Transproxify to communicate with destination servers
+    directly, without using a proxy, for both TCP and UDP. This is primarily
+    useful for debugging purposes, but may also be useful when combined with
+    other types of transparent proxying software. Just specify the upstream
+    proxy address as localhost and the port as 0:
+
+      # transproxify -t direct localhost 0 10000
 
 HTTP proxy authentication:
     If a username and password are supplied, transproxify will send a
@@ -112,6 +130,24 @@ SOCKS5 proxy authentication:
     authenticate using the username and password authentication method as well
     as the no authentication method. If no username or password is given, only
     the no authentication method is attempted.
+
+Security and Disclaimer:
+    Like many forms of networking software or proxies can pose a significant
+    risk to network security. Transproxify provides no guarantees about
+    communication confidentiality, integrity, authenticity, or availability.
+
+    In particular, all tunnels and proxy credentials are transferred in
+    cleartext across the network. Any user on the network can use transproxify
+    without authentication, thus gaining access to the upstream proxy. Client
+    applications should enforce their own security where possible (such as
+    TLS).
+
+    The author(s) of this software cannot be held responsible for any loss,
+    damage, or otherwise bad thing which happens as a result of using this
+    software. This includes, but is not limited to, data compromise, loss of
+    service or integrity, and remote code execution.
+
+    This tool is provided in good faith. Use at your own risk.
 )END_USAGE";
 
     std::cerr << usage;

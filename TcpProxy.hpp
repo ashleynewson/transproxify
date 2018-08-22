@@ -21,7 +21,10 @@ protected:
     virtual ~TcpProxy() {
     }
 
-    virtual void proxy_negotiate(int proxySocketFd) = 0;
+    virtual void proxy_negotiate(int proxySocketFd) {
+        // Doesn't have to be implemented
+        (void)proxySocketFd; // Prevent unused warning.
+    }
 
     virtual void relay(int proxySocketFd) {
         std::cerr << getpid() << "\t" << "Tunnel  " << clientHost << " -> " << targetHost << ":" << targetPort << std::endl;

@@ -86,7 +86,7 @@ public:
 
         switch (proxyProtocol) {
         case ProxyProtocol::DIRECT:
-            check_support(ProxyProtocol::DIRECT, proxiedProtocol, {ProxiedProtocol::UDP});
+            check_support(ProxyProtocol::DIRECT, proxiedProtocol, {ProxiedProtocol::TCP, ProxiedProtocol::UDP});
             break;
         case ProxyProtocol::HTTP:
             check_support(ProxyProtocol::HTTP, proxiedProtocol, {ProxiedProtocol::TCP});

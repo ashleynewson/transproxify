@@ -16,7 +16,7 @@ public:
     }
 
 private:
-    void proxy_negotiate(int proxySocketFd) {
+    void proxy_negotiate(int proxySocketFd) override {
         socks5_greet_and_authenticate(proxySocketFd);
         socks5_request_tunnel(proxySocketFd, 1 /*CONNECT*/);
     }

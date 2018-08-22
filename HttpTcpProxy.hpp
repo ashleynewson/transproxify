@@ -63,7 +63,7 @@ private:
         }
     }
 
-    void proxy_negotiate(int proxySocketFd) {
+    void proxy_negotiate(int proxySocketFd) override {
         std::string tunnelRequest =
             "CONNECT " + targetHost + ":" + std::to_string(targetPort) + " HTTP/1.1\n"
             + "Host: " + targetHost + ":" + std::to_string(targetPort) + "\n"

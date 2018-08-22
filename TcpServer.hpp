@@ -3,6 +3,7 @@
 
 #include "ProxySettings.hpp"
 #include "Proxy.hpp"
+#include "DirectTcpProxy.hpp"
 #include "HttpTcpProxy.hpp"
 #include "Socks4TcpProxy.hpp"
 #include "Socks5TcpProxy.hpp"
@@ -126,6 +127,9 @@ public:
 
                 try {
                     switch (proxySettings.proxyProtocol) {
+                    case ProxySettings::ProxyProtocol::DIRECT:
+                        DirectTcpProxy(proxySettings, connectedClientAddress, connectedServerAddress, acceptedSocketFd).run();
+                        break;
                     case ProxySettings::ProxyProtocol::HTTP:
                         HttpTcpProxy(proxySettings, connectedClientAddress, connectedServerAddress, acceptedSocketFd).run();
                         break;

@@ -14,7 +14,7 @@ public:
     }
 
 private:
-    void proxy_negotiate(int proxySocketFd) {
+    void proxy_negotiate(int proxySocketFd) override {
 #pragma pack(push, 1)
         struct Socks4Packet {
             uint8_t version;
