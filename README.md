@@ -65,7 +65,7 @@ Yes, that is true.
 
 It's a bug. Seems to start working again if you leave it a while.
 
-### SECURITY DISCLAIMER
+## SECURITY DISCLAIMER
 
 Like many forms of networking software, proxies can pose a significant risk to
 network security. Transproxify provides no guarantees about communication
