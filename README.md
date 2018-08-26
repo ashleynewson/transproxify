@@ -85,4 +85,4 @@ This tool is provided in good faith. Use at your own risk.
 
 
 
-Copyright Ashley Newson 2018.
+Copyright Ashley Newson 2018. Licensed under the 3-clause BSD License. See LICENSE file for details.
