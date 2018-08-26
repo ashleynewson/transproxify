@@ -27,7 +27,7 @@
 #include "UdpServer.hpp"
 
 void print_usage() {
-    const char* usage = R"END_USAGE(Transproxify - Copyright Ashley Newson 2018
+    const char* usage = R"END_USAGE(Transproxify - Transparently redirect TCP and UDP traffic through proxies.
 
 Usage:
     transproxify [OPTIONS...] PROXY_HOST PROXY_PORT LISTEN_PORT
@@ -95,6 +95,8 @@ Options:
         this way by examining process tables.
 
         WARNING: all credentials are sent over the network in cleartext!
+    -L
+        Show copyright and license information.
 
 UDP Setup:
     Setting up UDP proxying is a little different. We must create a new lookup
@@ -148,9 +150,59 @@ Security and Disclaimer:
     service or integrity, and remote code execution.
 
     This tool is provided in good faith. Use at your own risk.
+
+Copyright:
+    Copyright 2018 Ashley Newson. All rights reserved.
+
+    Licensed under the 3-clause BSD License. (-L for details.)
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+    LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+    CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+    CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+    ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+    POSSIBILITY OF SUCH DAMAGE.
+
 )END_USAGE";
 
     std::cerr << usage;
+}
+
+void print_license() {
+    const char* license = R"END_LICENSE(Copyright (c) 2018, Ashley Newson
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+)END_LICENSE";
+    std::cout << license;
 }
 
 
@@ -165,7 +217,7 @@ int main(int argc, char **argv) {
     bool promptPassword = false;
 
     int c;
-    while ((c = getopt(argc, argv, "t:r:u:pP:")) != -1) {
+    while ((c = getopt(argc, argv, "t:r:u:pP:L")) != -1) {
         switch (c) {
         case 't':
             if (strcmp(optarg, "direct") == 0) {
@@ -208,6 +260,9 @@ int main(int argc, char **argv) {
         case 'P':
             password = optarg;
             break;
+        case 'L':
+            print_license();
+            exit(0);
         default:
             std::cerr << "Bad option" << std::endl;
             print_usage();
