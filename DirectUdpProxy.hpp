@@ -9,11 +9,21 @@ private:
     int targetSocketFd;
     int proxyPort;
     Cleaner targetSocketFdCleaner;
+    struct sockaddr_in modifiedAddress; // Upstream address to actually send to.
 public:
     DirectUdpProxy(ProxySettings settings, struct sockaddr_in clientAddress, struct sockaddr_in targetAddress):
         Proxy(settings, clientAddress, targetAddress),
         UdpProxy(settings, clientAddress, targetAddress)
     {
+        // The modified address can override neither, one, or both address and port.
+        modifiedAddress = targetAddress;
+        if (settings.proxyAddress.sin_addr.s_addr != 0) { // 0.0.0.0
+            modifiedAddress.sin_addr.s_addr = settings.proxyAddress.sin_addr.s_addr;
+        }
+        if (settings.proxyAddress.sin_port != 0) {
+            modifiedAddress.sin_port = settings.proxyAddress.sin_port;
+        }
+
         // to client
         targetSocketFd = socket(AF_INET, SOCK_DGRAM, 0);
         if (targetSocketFd < 0) {
@@ -33,7 +43,7 @@ public:
             throw std::runtime_error("could not bind to address and port for sending to target");
         }
         // Set the default address/port for sending packets.
-        if (connect(targetSocketFd, (struct sockaddr*)&targetAddress, sizeof(targetAddress)) < 0) {
+        if (connect(targetSocketFd, (struct sockaddr*)&modifiedAddress, sizeof(modifiedAddress)) < 0) {
             throw std::runtime_error("could not connect for sending to target");
         }
     }
@@ -63,7 +73,7 @@ public:
     }
 
     void send_to_target(const char* buffer, size_t len) override {
-        if (sendto(targetSocketFd, buffer, len, 0, (struct sockaddr*)&targetAddress, sizeof(targetAddress)) != (ssize_t)len) {
+        if (sendto(targetSocketFd, buffer, len, 0, (struct sockaddr*)&modifiedAddress, sizeof(modifiedAddress)) != (ssize_t)len) {
             perror("sendto failed sending to target");
             std::cerr << "\t" << "FAILED SEND DGRAM   " << clientHost << ":" << clientPort << " -> " << targetHost << ":" << targetPort << std::endl;
             return;

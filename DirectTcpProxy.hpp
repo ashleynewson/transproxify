@@ -20,13 +20,22 @@ public:
                 close(this->clientSocketFd);
             });
 
+        // The modified address can override neither, one, or both address and port.
+        struct sockaddr_in modifiedAddress = targetAddress;
+        if (settings.proxyAddress.sin_addr.s_addr != 0) { // 0.0.0.0
+            modifiedAddress.sin_addr.s_addr = settings.proxyAddress.sin_addr.s_addr;
+        }
+        if (settings.proxyAddress.sin_port != 0) {
+            modifiedAddress.sin_port = settings.proxyAddress.sin_port;
+        }
+
         // Establish connection to proxy
         int targetSocketFd = socket(AF_INET, SOCK_STREAM, 0);
         Cleaner targetSocketFdCleaner([&targetSocketFd] {
                 close(targetSocketFd);
             });
 
-        if (connect(targetSocketFd, (struct sockaddr*)&targetAddress, sizeof(targetAddress)) < 0) {
+        if (connect(targetSocketFd, (struct sockaddr*)&modifiedAddress, sizeof(modifiedAddress)) < 0) {
             throw std::runtime_error("could not connect to target");
         }
 

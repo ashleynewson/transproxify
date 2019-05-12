@@ -9,6 +9,7 @@ struct ProxySettings {
 public:
     enum class ProxyProtocol {
         DIRECT,
+        REDIRECT,
         HTTP,
         SOCKS4,
         SOCKS5,
@@ -21,6 +22,8 @@ public:
         switch (protocol) {
         case ProxyProtocol::DIRECT:
             return "Direct";
+        case ProxyProtocol::REDIRECT:
+            return "Redirect";
         case ProxyProtocol::HTTP:
             return "HTTP";
         case ProxyProtocol::SOCKS4:
@@ -87,6 +90,11 @@ public:
         switch (proxyProtocol) {
         case ProxyProtocol::DIRECT:
             check_support(ProxyProtocol::DIRECT, proxiedProtocol, {ProxiedProtocol::TCP, ProxiedProtocol::UDP});
+            proxyAddress.sin_addr.s_addr = 0;
+            proxyAddress.sin_port = 0;
+            break;
+        case ProxyProtocol::REDIRECT:
+            check_support(ProxyProtocol::REDIRECT, proxiedProtocol, {ProxiedProtocol::TCP, ProxiedProtocol::UDP});
             break;
         case ProxyProtocol::HTTP:
             check_support(ProxyProtocol::HTTP, proxiedProtocol, {ProxiedProtocol::TCP});

@@ -128,6 +128,7 @@ public:
                 try {
                     switch (proxySettings.proxyProtocol) {
                     case ProxySettings::ProxyProtocol::DIRECT:
+                    case ProxySettings::ProxyProtocol::REDIRECT:
                         DirectTcpProxy(proxySettings, connectedClientAddress, connectedServerAddress, acceptedSocketFd).run();
                         break;
                     case ProxySettings::ProxyProtocol::HTTP:

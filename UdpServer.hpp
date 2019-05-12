@@ -92,6 +92,7 @@ private:
 
         switch (proxySettings.proxyProtocol) {
         case ProxySettings::ProxyProtocol::DIRECT:
+        case ProxySettings::ProxyProtocol::REDIRECT:
             proxy = std::make_shared<DirectUdpProxy>(proxySettings, clientAddress, targetAddress);
             break;
         case ProxySettings::ProxyProtocol::SOCKS5:
